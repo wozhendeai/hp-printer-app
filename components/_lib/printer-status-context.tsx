@@ -5,25 +5,19 @@ import {
   useContext,
   useState,
   useEffect,
-  useCallback,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
-import {
-  fetchPrinterStatus,
-  fetchInkLevels,
-  fetchPaperTray,
-  fetchScannerStatus,
-  type PrinterStatus as PrinterStatusAPI,
-  type InkLevel,
-  type PaperTray,
-  type ScannerStatus,
+import { usePrinterQueries } from "@/app/_lib/queries/printer-queries";
+import { useCurrentJob, useCancelJob } from "@/app/_lib/queries/job-queries";
+import type {
+  PrinterStatus as PrinterStatusAPI,
+  InkLevel,
+  PaperTray,
+  ScannerStatus,
 } from "@/app/_lib/printer-api";
-import {
-  fetchCurrentJob,
-  cancelJob as cancelJobApi,
-  type PrinterJob,
-} from "@/app/_lib/job-api";
+import type { PrinterJob } from "@/app/_lib/job-api";
 
 // Derived status type for UI display
 export type PrinterDisplayStatus =
@@ -178,26 +172,6 @@ function computeStatus(
   return "ready";
 }
 
-// Polling intervals in ms
-const POLL_INTERVALS = {
-  status: {
-    idle: 5000,
-    active: 2000,
-    collapsed: 10000,
-  },
-  ink: {
-    idle: 30000,
-    collapsed: 60000,
-  },
-  paper: {
-    idle: 10000,
-    collapsed: 20000,
-  },
-  job: {
-    active: 1000,
-  },
-};
-
 interface PrinterStatusProviderProps {
   children: ReactNode;
 }
@@ -205,40 +179,39 @@ interface PrinterStatusProviderProps {
 export function PrinterStatusProvider({
   children,
 }: PrinterStatusProviderProps) {
-  // Raw data from API
-  const [printerStatus, setPrinterStatus] = useState<PrinterStatusAPI | null>(
-    null,
-  );
-  const [inkLevels, setInkLevels] = useState<InkLevel[]>([]);
-  const [paperTray, setPaperTray] = useState<PaperTray | null>(null);
-  const [scannerStatus, setScannerStatus] = useState<ScannerStatus | null>(
-    null,
-  );
-  const [currentJobData, setCurrentJobData] = useState<PrinterJob | null>(null);
-
-  // Meta state
-  const [isLoading, setIsLoading] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  // Drawer state
+  // UI state
   const [isDrawerExpanded, setDrawerExpanded] = useState(false);
 
-  // Refs for cleanup
-  const isMountedRef = useRef(true);
-  const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const inkIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const paperIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const jobIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Track previous error state for auto-expand logic
+  const prevHasErrorRef = useRef(false);
+
+  // Fetch current job data
+  const currentJobQuery = useCurrentJob();
+  const currentJobData = currentJobQuery.data ?? null;
+  const hasActiveJob = currentJobData?.state === "Processing";
+
+  // Fetch all printer data with dynamic polling based on drawer/job state
+  const printerQueries = usePrinterQueries({
+    isExpanded: isDrawerExpanded,
+    hasActiveJob,
+  });
+
+  // Cancel job mutation
+  const cancelJobMutation = useCancelJob();
+
+  // Memoize alerts to prevent useEffect dependency instability
+  const alerts = useMemo(
+    () => printerQueries.printerStatus?.alerts ?? [],
+    [printerQueries.printerStatus?.alerts],
+  );
 
   // Compute derived values
-  const alerts = printerStatus?.alerts || [];
   const displayAlerts = alerts.map(getAlertDisplay);
   const status = computeStatus(
     alerts,
     currentJobData,
-    scannerStatus,
-    isOffline,
+    printerQueries.scannerStatus,
+    printerQueries.isOffline,
   );
 
   // Convert job to display format
@@ -247,188 +220,47 @@ export function PrinterStatusProvider({
         id: currentJobData.id,
         name: currentJobData.source || `${currentJobData.category} Job`,
         type: currentJobData.category,
-        progress: 0, // Would need IPP query for actual progress
+        progress: 0,
         currentPage: undefined,
         totalPages: undefined,
       }
     : null;
 
-  // Track previous error state for auto-expand logic
-  const hadErrorRef = useRef(false);
-
-  // Fetch status data (printer status, scanner status, job list)
-  const fetchStatusData = useCallback(async () => {
-    if (!isMountedRef.current) return;
-
-    try {
-      const [statusResult, scannerResult, jobResult] = await Promise.all([
-        fetchPrinterStatus(),
-        fetchScannerStatus(),
-        fetchCurrentJob(),
-      ]);
-
-      if (isMountedRef.current) {
-        // Check if transitioning to error state - auto-expand drawer
-        const hasError = statusResult.alerts.some(
-          (a) => a.severity === "Error",
-        );
-        if (hasError && !hadErrorRef.current) {
-          setDrawerExpanded(true);
-        }
-        hadErrorRef.current = hasError;
-
-        setPrinterStatus(statusResult);
-        setScannerStatus(scannerResult);
-        setCurrentJobData(jobResult);
-        setIsOffline(false);
-        setLastUpdated(new Date());
-      }
-    } catch {
-      if (isMountedRef.current) {
-        setIsOffline(true);
-      }
+  // Auto-expand drawer on error transition (when error first appears)
+  // The setState is intentional - we want to synchronize UI state with external printer state
+  useEffect(() => {
+    const hasError = alerts.some((a) => a.severity === "Error");
+    if (hasError && !prevHasErrorRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: auto-expand drawer when printer transitions to error state
+      setDrawerExpanded(true);
     }
-  }, []);
-
-  // Fetch ink levels
-  const fetchInkData = useCallback(async () => {
-    if (!isMountedRef.current) return;
-
-    try {
-      const result = await fetchInkLevels();
-      if (isMountedRef.current) {
-        setInkLevels(result);
-      }
-    } catch {
-      // Ink fetch failure doesn't mean offline
-    }
-  }, []);
-
-  // Fetch paper status
-  const fetchPaperData = useCallback(async () => {
-    if (!isMountedRef.current) return;
-
-    try {
-      const result = await fetchPaperTray();
-      if (isMountedRef.current) {
-        setPaperTray(result);
-      }
-    } catch {
-      // Paper fetch failure doesn't mean offline
-    }
-  }, []);
+    prevHasErrorRef.current = hasError;
+  }, [alerts]);
 
   // Full refresh
-  const refresh = useCallback(async () => {
-    await Promise.all([fetchStatusData(), fetchInkData(), fetchPaperData()]);
-  }, [fetchStatusData, fetchInkData, fetchPaperData]);
+  const refresh = async () => {
+    await printerQueries.refetch();
+  };
 
   // Cancel current job
-  const cancelCurrentJob = useCallback(async () => {
+  const cancelCurrentJob = async () => {
     if (!currentJobData) return;
+    await cancelJobMutation.mutateAsync(currentJobData.id);
+  };
 
-    try {
-      await cancelJobApi(currentJobData.id);
-      // Refresh to get updated status
-      await fetchStatusData();
-    } catch (error) {
-      console.error("Failed to cancel job:", error);
-    }
-  }, [currentJobData, fetchStatusData]);
-
-  // Initial fetch - isLoading starts as true, so we just need to set it to false when done
-  // The async fetch functions set state after awaiting, which is the intended pattern for data fetching
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial data fetch is async, setState happens after await
-    Promise.all([fetchStatusData(), fetchInkData(), fetchPaperData()]).finally(
-      () => {
-        if (isMountedRef.current) {
-          setIsLoading(false);
-        }
-      },
-    );
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [fetchStatusData, fetchInkData, fetchPaperData]);
-
-  // Dynamic polling for status
-  useEffect(() => {
-    const hasActiveJob = currentJobData?.state === "Processing";
-    const interval = hasActiveJob
-      ? POLL_INTERVALS.status.active
-      : isDrawerExpanded
-        ? POLL_INTERVALS.status.idle
-        : POLL_INTERVALS.status.collapsed;
-
-    statusIntervalRef.current = setInterval(fetchStatusData, interval);
-
-    return () => {
-      if (statusIntervalRef.current) {
-        clearInterval(statusIntervalRef.current);
-      }
-    };
-  }, [fetchStatusData, currentJobData?.state, isDrawerExpanded]);
-
-  // Dynamic polling for ink levels
-  useEffect(() => {
-    const interval = isDrawerExpanded
-      ? POLL_INTERVALS.ink.idle
-      : POLL_INTERVALS.ink.collapsed;
-
-    inkIntervalRef.current = setInterval(fetchInkData, interval);
-
-    return () => {
-      if (inkIntervalRef.current) {
-        clearInterval(inkIntervalRef.current);
-      }
-    };
-  }, [fetchInkData, isDrawerExpanded]);
-
-  // Dynamic polling for paper status
-  useEffect(() => {
-    const interval = isDrawerExpanded
-      ? POLL_INTERVALS.paper.idle
-      : POLL_INTERVALS.paper.collapsed;
-
-    paperIntervalRef.current = setInterval(fetchPaperData, interval);
-
-    return () => {
-      if (paperIntervalRef.current) {
-        clearInterval(paperIntervalRef.current);
-      }
-    };
-  }, [fetchPaperData, isDrawerExpanded]);
-
-  // Fast polling for active job progress
-  useEffect(() => {
-    const hasActiveJob = currentJobData?.state === "Processing";
-
-    if (hasActiveJob) {
-      jobIntervalRef.current = setInterval(
-        fetchStatusData,
-        POLL_INTERVALS.job.active,
-      );
-    }
-
-    return () => {
-      if (jobIntervalRef.current) {
-        clearInterval(jobIntervalRef.current);
-      }
-    };
-  }, [fetchStatusData, currentJobData?.state]);
+  // Convert timestamp to Date
+  const lastUpdated = printerQueries.dataUpdatedAt
+    ? new Date(printerQueries.dataUpdatedAt)
+    : null;
 
   const value: PrinterStatusContextValue = {
     status,
     currentJob,
     alerts: displayAlerts,
-    inkLevels,
-    paperTray,
-    isLoading,
-    isOffline,
+    inkLevels: printerQueries.inkLevels,
+    paperTray: printerQueries.paperTray,
+    isLoading: printerQueries.isLoading,
+    isOffline: printerQueries.isOffline,
     lastUpdated,
     isDrawerExpanded,
     setDrawerExpanded,

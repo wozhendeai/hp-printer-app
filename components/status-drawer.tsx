@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   usePrinterStatusContext,
   type CurrentJob,
@@ -275,6 +275,7 @@ export function StatusDrawer() {
     inkLevels,
     paperTray,
     isDrawerExpanded,
+    setDrawerExpanded,
     refresh,
     cancelCurrentJob,
   } = usePrinterStatusContext();
@@ -284,9 +285,13 @@ export function StatusDrawer() {
   const isOffline = status === "offline";
 
   return (
-    <Collapsible open={isDrawerExpanded}>
-      <CollapsibleContent className="border-b bg-background overflow-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
-        <div className="px-4 md:px-6 py-4 space-y-4 max-w-2xl">
+    <Sheet open={isDrawerExpanded} onOpenChange={setDrawerExpanded}>
+      <SheetContent
+        side="top"
+        showCloseButton={false}
+        className="max-h-[80vh] overflow-y-auto"
+      >
+        <div className="px-4 md:px-6 py-4 space-y-4 max-w-2xl mx-auto">
           {isOffline ? (
             <OfflineSection onRetry={refresh} />
           ) : (
@@ -307,7 +312,7 @@ export function StatusDrawer() {
             </>
           )}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      </SheetContent>
+    </Sheet>
   );
 }

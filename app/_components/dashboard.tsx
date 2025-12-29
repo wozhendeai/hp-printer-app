@@ -1,7 +1,7 @@
 "use client";
 
 import { PrinterHub } from "./printer-hub";
-import { usePrinterStatus } from "@/app/_lib/use-printer-status";
+import { usePrinterStatus } from "@/app/_lib/queries/printer-queries";
 
 export function Dashboard() {
   const { data, loading, isOffline } = usePrinterStatus({

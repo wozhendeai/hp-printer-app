@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Loader2, FileStack, AlertCircle } from "lucide-react";
-import { fetchScannerStatus, type ScannerStatus } from "@/app/_lib/printer-api";
+import { type ScannerStatus } from "@/app/_lib/printer-api";
+import { useScannerStatus } from "@/app/_lib/queries/printer-queries";
 import { useCopy } from "../_lib/use-copy";
 import { useRecentCopies } from "../_lib/use-recent-copies";
 import { defaultCopySettings, type CopySettings } from "../_lib/copy-types";
@@ -16,40 +17,14 @@ import { cn } from "@/lib/utils";
 export function Copier() {
   const [copies, setCopies] = useState(1);
   const [settings, setSettings] = useState<CopySettings>(defaultCopySettings);
-  const [scannerStatus, setScannerStatus] = useState<ScannerStatus | null>(
-    null,
-  );
-  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const { state, startCopy, cancel, reset } = useCopy();
   const { recentCopies, addCopy } = useRecentCopies();
 
-  // Poll scanner status
-  useEffect(() => {
-    let mounted = true;
-
-    const pollStatus = async () => {
-      try {
-        const status = await fetchScannerStatus();
-        if (mounted) {
-          setScannerStatus(status);
-          setConnectionError(null);
-        }
-      } catch {
-        if (mounted) {
-          setConnectionError("Unable to connect to scanner");
-        }
-      }
-    };
-
-    pollStatus();
-    const interval = setInterval(pollStatus, 3000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  // Poll scanner status via TanStack Query
+  const { data: scannerStatus, error: connectionError } = useScannerStatus({
+    pollInterval: 3000,
+  });
 
   // Track completed copies
   const handleStartCopy = useCallback(async () => {
