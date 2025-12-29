@@ -1,52 +1,36 @@
 "use client";
 
-import { useState, useCallback, useSyncExternalStore } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { clientStateKeys } from "@/app/_lib/queries/keys";
 import type { RecentCopy, CopySettings } from "./copy-types";
 
-const STORAGE_KEY = "hp-printer-recent-copies";
 const MAX_RECENT = 10;
 
+// Stored format has timestamp as string for JSON serialization
 interface StoredCopy extends Omit<RecentCopy, "timestamp"> {
   timestamp: string;
 }
 
-function parseStoredCopies(stored: string | null): RecentCopy[] {
-  if (!stored) return [];
-  try {
-    const parsed: StoredCopy[] = JSON.parse(stored);
-    return parsed.map((c) => ({
-      ...c,
-      timestamp: new Date(c.timestamp),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function subscribe(callback: () => void) {
-  window.addEventListener("storage", callback);
-  return () => window.removeEventListener("storage", callback);
-}
-
-function getSnapshot() {
-  return localStorage.getItem(STORAGE_KEY);
-}
-
-function getServerSnapshot() {
-  return null;
+// Convert stored format to runtime format
+function parseStoredCopies(stored: StoredCopy[]): RecentCopy[] {
+  return stored.map((c) => ({
+    ...c,
+    timestamp: new Date(c.timestamp),
+  }));
 }
 
 export function useRecentCopies() {
-  // Use useSyncExternalStore for hydration-safe localStorage access
-  const storedValue = useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    getServerSnapshot,
-  );
-  const copies = parseStoredCopies(storedValue);
+  const queryClient = useQueryClient();
 
-  // Force re-render trigger for immediate updates
-  const [, forceUpdate] = useState(0);
+  const { data: storedCopies = [] } = useQuery<StoredCopy[]>({
+    queryKey: clientStateKeys.recentCopies(),
+    queryFn: () => [],
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  const copies = parseStoredCopies(storedCopies);
 
   const addCopy = useCallback(
     (data: {
@@ -54,29 +38,20 @@ export function useRecentCopies() {
       settings: CopySettings;
       status: "completed" | "failed";
     }) => {
-      const currentCopies = parseStoredCopies(
-        localStorage.getItem(STORAGE_KEY),
-      );
-
-      const newCopy: RecentCopy = {
+      const newCopy: StoredCopy = {
         id: crypto.randomUUID(),
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         copies: data.copies,
         settings: data.settings,
         status: data.status,
       };
 
-      const updated = [newCopy, ...currentCopies].slice(0, MAX_RECENT);
-
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-        // Trigger re-render since storage event only fires for other tabs
-        forceUpdate((n) => n + 1);
-      } catch {
-        // Ignore storage errors
-      }
+      queryClient.setQueryData<StoredCopy[]>(
+        clientStateKeys.recentCopies(),
+        (old = []) => [newCopy, ...old].slice(0, MAX_RECENT),
+      );
     },
-    [],
+    [queryClient],
   );
 
   return { recentCopies: copies, addCopy };

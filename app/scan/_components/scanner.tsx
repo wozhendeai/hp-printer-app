@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   ScanLine,
   FileText,
@@ -23,7 +23,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  fetchScannerStatus,
   performScan,
   type ScannerStatus,
   type ScanColorMode,
@@ -34,6 +33,7 @@ import {
   type ScanSettings as APIScanSettings,
   SCAN_SIZES,
 } from "@/app/_lib/printer-api";
+import { useScannerStatus } from "@/app/_lib/queries/printer-queries";
 
 type ScanState = "idle" | "scanning" | "complete" | "error";
 type PresetMode = "document" | "photo" | "custom";
@@ -192,7 +192,22 @@ function EmptyScans() {
   );
 }
 
-function ScannerStatusBadge({ status }: { status: ScannerStatus | null }) {
+function ScannerStatusBadge({
+  status,
+  error,
+}: {
+  status: ScannerStatus | null;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-status-error">
+        <AlertCircle className="size-4" />
+        <span>{error}</span>
+      </div>
+    );
+  }
+
   if (!status) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -235,40 +250,16 @@ function ScannerStatusBadge({ status }: { status: ScannerStatus | null }) {
 
 export function Scanner() {
   const [state, setState] = useState<ScanState>("idle");
-  const [scannerStatus, setScannerStatus] = useState<ScannerStatus | null>(
-    null,
-  );
   const [error, setError] = useState<string | null>(null);
   const [preset, setPreset] = useState<PresetMode>("document");
   const [settings, setSettings] = useState<ScanSettings>(defaultSettings);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
 
-  // Poll scanner status
-  useEffect(() => {
-    let mounted = true;
-    const pollStatus = async () => {
-      try {
-        const status = await fetchScannerStatus();
-        if (mounted) {
-          setScannerStatus(status);
-          setError(null);
-        }
-      } catch {
-        if (mounted) {
-          setError("Unable to connect to scanner");
-        }
-      }
-    };
-
-    pollStatus();
-    const interval = setInterval(pollStatus, 3000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  // Poll scanner status via TanStack Query
+  const { data: scannerStatus, error: connectionError } = useScannerStatus({
+    pollInterval: 3000,
+  });
 
   const handlePresetChange = (newPreset: PresetMode) => {
     setPreset(newPreset);
@@ -309,12 +300,7 @@ export function Scanner() {
     };
 
     try {
-      const blob = await performScan(apiSettings, (scanState) => {
-        // Update scanner status during scan
-        setScannerStatus((prev) =>
-          prev ? { ...prev, state: scanState as ScannerStatus["state"] } : null,
-        );
-      });
+      const blob = await performScan(apiSettings);
 
       const url = URL.createObjectURL(blob);
       const newScan: RecentScan = {
@@ -365,7 +351,7 @@ export function Scanner() {
     <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-4">
       {/* Scanner Status */}
       <div className="flex items-center justify-between">
-        <ScannerStatusBadge status={scannerStatus} />
+        <ScannerStatusBadge status={scannerStatus} error={connectionError} />
       </div>
 
       {/* Preset Mode Tabs */}

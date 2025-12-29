@@ -5,6 +5,7 @@ import { MobileHeader } from "@/components/mobile-header";
 import { BottomNav } from "@/components/bottom-nav";
 import { StatusDrawer } from "@/components/status-drawer";
 import { PrinterStatusProvider } from "@/components/_lib/printer-status-context";
+import { Providers } from "./_components/providers";
 import "./globals.css";
 
 const fontSans = DM_Sans({
@@ -32,15 +33,17 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fontSans.variable} ${fontDisplay.variable}`}>
       <body className="antialiased font-sans">
-        <PrinterStatusProvider>
-          <div className="min-h-screen flex flex-col">
-            <Navbar />
-            <MobileHeader />
-            <StatusDrawer />
-            <main className="flex-1 pb-16 md:pb-0">{children}</main>
-            <BottomNav />
-          </div>
-        </PrinterStatusProvider>
+        <Providers>
+          <PrinterStatusProvider>
+            <div className="min-h-screen flex flex-col">
+              <Navbar />
+              <MobileHeader />
+              <StatusDrawer />
+              <main className="flex-1 pb-16 md:pb-0">{children}</main>
+              <BottomNav />
+            </div>
+          </PrinterStatusProvider>
+        </Providers>
       </body>
     </html>
   );
