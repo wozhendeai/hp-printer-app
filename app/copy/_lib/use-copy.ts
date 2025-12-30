@@ -1,18 +1,20 @@
+// Hook for managing copy operations (scan + print).
 "use client";
 
 import { useState, useCallback, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  performScan,
-  SCAN_SIZES,
-  type ScanSettings,
-  type ScanColorMode,
-  type ScanResolution,
-} from "@/app/_lib/printer-api";
-import { submitPrintJob } from "@/app/print/_lib/print-api";
-import { jobKeys } from "@/app/_lib/queries/keys";
-import type { PrintSettings } from "@/app/print/_components/print-settings";
-import type { CopySettings, CopyState } from "./copy-types";
+import { performScan } from "@/lib/api/printer";
+import { submitPrintJob } from "@/lib/api/jobs";
+import { jobKeys } from "@/lib/queries/keys";
+import type {
+  ScanSettings,
+  ScanColorMode,
+  ScanResolution,
+  PrintSettings,
+  CopySettings,
+} from "@/lib/types";
+import { SCAN_SIZES } from "@/lib/constants";
+import type { CopyPhase, CopyErrorPhase } from "./types";
 
 // Map copy quality to scan resolution
 const QUALITY_TO_RESOLUTION: Record<CopySettings["quality"], ScanResolution> = {
@@ -53,92 +55,149 @@ function mapCopyToPrintSettings(
   };
 }
 
-interface CopyParams {
-  copies: number;
-  settings: CopySettings;
-}
-
 export interface UseCopyResult {
-  state: CopyState;
+  phase: CopyPhase;
+  isScanning: boolean;
+  isPrinting: boolean;
+  isComplete: boolean;
+  error: Error | null;
+  errorPhase: CopyErrorPhase | null;
+  completedCopies: number | null;
+  scanProgress: string | null;
+  printProgress: { current: number; total: number } | null;
   startCopy: (copies: number, settings: CopySettings) => Promise<void>;
   cancel: () => void;
   reset: () => void;
 }
 
 export function useCopy(): UseCopyResult {
-  const [state, setState] = useState<CopyState>({ status: "idle" });
-  // Track soft cancellation - performScan doesn't support AbortSignal
+  const [phase, setPhase] = useState<CopyPhase>("idle");
+  const [errorPhase, setErrorPhase] = useState<CopyErrorPhase | null>(null);
+  const [completedCopies, setCompletedCopies] = useState<number | null>(null);
+  const [scanProgress, setScanProgress] = useState<string | null>(null);
+  const [printProgress, setPrintProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+
   const isCancelledRef = useRef(false);
   const queryClient = useQueryClient();
 
-  const copyMutation = useMutation({
-    mutationFn: async ({ copies, settings }: CopyParams) => {
-      isCancelledRef.current = false;
-
-      // Phase 1: Scanning
-      setState({ status: "scanning", progress: "Starting scan..." });
-
-      const scanSettings = mapCopyToScanSettings(settings);
-
-      const blob = await performScan(scanSettings, (scanState) => {
+  // Scan mutation
+  const scanMutation = useMutation({
+    mutationFn: async (settings: ScanSettings) => {
+      return performScan(settings, (state) => {
         if (!isCancelledRef.current) {
-          setState({ status: "scanning", progress: scanState });
+          setScanProgress(state);
         }
       });
+    },
+  });
 
-      if (isCancelledRef.current) {
-        throw new Error("Cancelled");
-      }
-
-      // Phase 2: Printing
-      setState({ status: "printing", currentCopy: 1, totalCopies: copies });
-
-      const printSettings = mapCopyToPrintSettings(settings, copies);
+  // Print mutation
+  const printMutation = useMutation({
+    mutationFn: async ({
+      blob,
+      settings,
+    }: {
+      blob: Blob;
+      settings: PrintSettings;
+    }) => {
       const file = new File([blob], "copy.jpg", { type: "image/jpeg" });
-
-      await submitPrintJob(file, printSettings);
-
-      if (isCancelledRef.current) {
-        throw new Error("Cancelled");
-      }
-
-      return copies;
+      return submitPrintJob(file, settings);
     },
-    onSuccess: (copies) => {
-      setState({ status: "complete", copies });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: jobKeys.all });
-    },
-    onError: (error) => {
-      if (isCancelledRef.current) {
-        setState({ status: "idle" });
-        return;
-      }
-
-      const message = error instanceof Error ? error.message : "Copy failed";
-      const phase = state.status === "scanning" ? "scan" : "print";
-
-      setState({ status: "error", message, phase });
     },
   });
 
   const startCopy = useCallback(
-    async (copies: number, settings: CopySettings) => {
-      await copyMutation.mutateAsync({ copies, settings });
+    async (copies: number, copySettings: CopySettings) => {
+      isCancelledRef.current = false;
+      setErrorPhase(null);
+      setCompletedCopies(null);
+      setScanProgress("Starting scan...");
+      setPrintProgress(null);
+
+      setPhase("scanning");
+
+      try {
+        const scanSettings = mapCopyToScanSettings(copySettings);
+        const blob = await scanMutation.mutateAsync(scanSettings);
+
+        if (isCancelledRef.current) {
+          setPhase("idle");
+          return;
+        }
+
+        setPhase("printing");
+        setPrintProgress({ current: 1, total: copies });
+        setScanProgress(null);
+
+        const printSettings = mapCopyToPrintSettings(copySettings, copies);
+        await printMutation.mutateAsync({ blob, settings: printSettings });
+
+        if (isCancelledRef.current) {
+          setPhase("idle");
+          return;
+        }
+
+        setCompletedCopies(copies);
+        setPhase("idle");
+      } catch (error) {
+        if (isCancelledRef.current) {
+          setPhase("idle");
+          return;
+        }
+
+        // Determine which phase failed
+        setErrorPhase(scanMutation.isError ? "scan" : "print");
+        setPhase("idle");
+        throw error;
+      }
     },
-    [copyMutation],
+    [scanMutation, printMutation],
   );
 
   const cancel = useCallback(() => {
     isCancelledRef.current = true;
-    copyMutation.reset();
-    setState({ status: "idle" });
-  }, [copyMutation]);
+    scanMutation.reset();
+    printMutation.reset();
+    setPhase("idle");
+    setScanProgress(null);
+    setPrintProgress(null);
+    setErrorPhase(null);
+  }, [scanMutation, printMutation]);
 
   const reset = useCallback(() => {
     isCancelledRef.current = false;
-    copyMutation.reset();
-    setState({ status: "idle" });
-  }, [copyMutation]);
+    scanMutation.reset();
+    printMutation.reset();
+    setPhase("idle");
+    setErrorPhase(null);
+    setCompletedCopies(null);
+    setScanProgress(null);
+    setPrintProgress(null);
+  }, [scanMutation, printMutation]);
 
-  return { state, startCopy, cancel, reset };
+  // Derived state
+  const isScanning = phase === "scanning" && scanMutation.isPending;
+  const isPrinting = phase === "printing" && printMutation.isPending;
+  const isComplete = phase === "idle" && completedCopies !== null;
+  const error = scanMutation.error ?? printMutation.error ?? null;
+
+  return {
+    phase,
+    isScanning,
+    isPrinting,
+    isComplete,
+    error,
+    errorPhase,
+    completedCopies,
+    scanProgress,
+    printProgress,
+    startCopy,
+    cancel,
+    reset,
+  };
 }

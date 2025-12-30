@@ -2,11 +2,11 @@
 
 import { useState, useCallback } from "react";
 import { Loader2, FileStack, AlertCircle } from "lucide-react";
-import { type ScannerStatus } from "@/app/_lib/printer-api";
-import { useScannerStatus } from "@/app/_lib/queries/printer-queries";
+import type { ScannerStatus, CopySettings } from "@/lib/types";
+import { DEFAULT_COPY_SETTINGS } from "@/lib/constants";
+import { useScannerStatus } from "@/lib/queries/printer";
 import { useCopy } from "../_lib/use-copy";
 import { useRecentCopies } from "../_lib/use-recent-copies";
-import { defaultCopySettings, type CopySettings } from "../_lib/copy-types";
 import { CopyCounter } from "./copy-counter";
 import { CopySettingsForm } from "./copy-settings";
 import { CopyStatus } from "./copy-status";
@@ -16,9 +16,22 @@ import { cn } from "@/lib/utils";
 
 export function Copier() {
   const [copies, setCopies] = useState(1);
-  const [settings, setSettings] = useState<CopySettings>(defaultCopySettings);
+  const [settings, setSettings] = useState<CopySettings>(DEFAULT_COPY_SETTINGS);
 
-  const { state, startCopy, cancel, reset } = useCopy();
+  const {
+    phase,
+    isScanning,
+    isPrinting,
+    isComplete,
+    error,
+    errorPhase,
+    completedCopies,
+    scanProgress,
+    printProgress,
+    startCopy,
+    cancel,
+    reset,
+  } = useCopy();
   const { recentCopies, addCopy } = useRecentCopies();
 
   // Poll scanner status via TanStack Query
@@ -36,10 +49,12 @@ export function Copier() {
     }
   }, [copies, settings, startCopy, addCopy]);
 
-  const isIdle = state.status === "idle";
-  const isComplete = state.status === "complete";
-  const scannerStopped = scannerStatus?.state === "Stopped";
+  const isIdle = phase === "idle" && !isComplete && !error;
+  const scannerStopped = scannerStatus?.state === "stopped";
   const canCopy = isIdle && !scannerStopped && !connectionError;
+
+  // Show status component when active or completed/errored
+  const showStatus = isScanning || isPrinting || isComplete || error;
 
   return (
     <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-4">
@@ -49,7 +64,7 @@ export function Copier() {
       </div>
 
       {/* Copy Counter or Status */}
-      {isIdle ? (
+      {isIdle && !showStatus ? (
         <CopyCounter
           value={copies}
           onChange={setCopies}
@@ -57,11 +72,22 @@ export function Copier() {
           disabled={!canCopy}
         />
       ) : (
-        <CopyStatus state={state} onCancel={cancel} onReset={reset} />
+        <CopyStatus
+          isScanning={isScanning}
+          isPrinting={isPrinting}
+          isComplete={isComplete}
+          error={error}
+          errorPhase={errorPhase}
+          scanProgress={scanProgress}
+          printProgress={printProgress}
+          completedCopies={completedCopies}
+          onCancel={cancel}
+          onReset={reset}
+        />
       )}
 
       {/* Settings (only when idle) */}
-      {isIdle && (
+      {isIdle && !showStatus && (
         <CopySettingsForm
           settings={settings}
           onChange={setSettings}
@@ -70,7 +96,7 @@ export function Copier() {
       )}
 
       {/* Copy Guide (only when idle) */}
-      {isIdle && <CopyGuide />}
+      {isIdle && !showStatus && <CopyGuide />}
 
       {/* Recent Copies (idle or complete) */}
       {(isIdle || isComplete) && <RecentCopies copies={recentCopies} />}
@@ -104,15 +130,15 @@ function ScannerStatusBadge({
   }
 
   const stateConfig = {
-    Idle: { color: "bg-status-ready", label: "Ready" },
-    Processing: { color: "bg-status-warning", label: "Busy" },
-    Stopped: { color: "bg-status-error", label: "Stopped" },
+    idle: { color: "bg-status-ready", label: "Ready" },
+    processing: { color: "bg-status-warning", label: "Busy" },
+    stopped: { color: "bg-status-error", label: "Stopped" },
   };
 
   const adfConfig = {
-    ScannerAdfEmpty: { label: null, icon: null },
-    ScannerAdfLoaded: { label: "Documents in ADF", icon: FileStack },
-    ScannerAdfJam: { label: "ADF Jam", icon: AlertCircle },
+    empty: { label: null, icon: null },
+    loaded: { label: "Documents in ADF", icon: FileStack },
+    jam: { label: "ADF Jam", icon: AlertCircle },
   };
 
   const stateInfo = stateConfig[status.state];

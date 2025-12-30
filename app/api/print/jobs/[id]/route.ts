@@ -1,25 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Printer, type FullRequest, type FullResponse } from "ipp";
+import { PRINTER_URI } from "@/lib/config";
+import type { JobState, PrintJobProgress } from "@/lib/types";
 
-const PRINTER_IP = "192.168.1.62";
-const PRINTER_URI = `ipp://${PRINTER_IP}:631/ipp/print`;
-
-export type JobState =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "canceled"
-  | "aborted";
-
-interface JobStatusResponse {
-  state: JobState;
-  currentPage?: number;
-  totalPages?: number;
-  errorMessage?: string;
-}
-
-// Map IPP job states to our simplified states
-function mapJobState(ippState: number): JobState {
+// Map IPP job-state integers to our canonical JobState type.
+// IPP uses numeric codes per RFC 8011. EWS uses PascalCase strings, normalized
+// separately in lib/api/jobs.ts. These are protocol-specific adapters.
+function mapIppJobState(ippState: number): JobState {
   // IPP job-state values (RFC 8011)
   // 3 = pending, 4 = pending-held, 5 = processing
   // 6 = processing-stopped, 7 = canceled, 8 = aborted, 9 = completed
@@ -52,7 +39,7 @@ interface IppJobAttributes {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -81,7 +68,7 @@ export async function GET(
       },
     } as unknown as FullRequest;
 
-    const result = await new Promise<JobStatusResponse>((resolve, reject) => {
+    const result = await new Promise<PrintJobProgress>((resolve, reject) => {
       printer.execute(
         "Get-Job-Attributes",
         getJobRequest,
@@ -99,7 +86,7 @@ export async function GET(
             return;
           }
 
-          const state = mapJobState(jobAttrs["job-state"] ?? 3);
+          const state = mapIppJobState(jobAttrs["job-state"] ?? 3);
           const stateReasons = jobAttrs["job-state-reasons"];
 
           // Extract page progress if available
@@ -148,7 +135,7 @@ export async function GET(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;

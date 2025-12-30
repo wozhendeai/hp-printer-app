@@ -1,8 +1,10 @@
+// CHANGES: Removed duplicate PrintSettings interface. Now imports from @/lib/types.
 "use client";
 
 import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
@@ -11,15 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-
-export interface PrintSettings {
-  copies: number;
-  colorMode: "color" | "bw";
-  duplex: boolean;
-  quality: "draft" | "normal" | "best";
-  paperSize: string;
-  paperType: string;
-}
+import type { PrintSettings } from "@/lib/types";
 
 interface PrintSettingsFormProps {
   settings: PrintSettings;
@@ -68,14 +62,15 @@ export function PrintSettingsForm({
   };
 
   return (
-    <div
+    <FieldGroup
       className={cn(
-        "divide-y divide-border border rounded-xl overflow-hidden bg-card",
+        "bg-card rounded-xl border border-border divide-y divide-border overflow-hidden",
         disabled && "opacity-50 pointer-events-none",
       )}
     >
       {/* Copies */}
-      <SettingRow label="Copies">
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Copies</FieldLabel>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -97,70 +92,58 @@ export function PrintSettingsForm({
             <Plus className="size-3.5" />
           </Button>
         </div>
-      </SettingRow>
+      </Field>
 
       {/* Color Mode */}
-      <SettingRow label="Color">
-        <ButtonGroup>
-          <ToggleButton
-            active={settings.colorMode === "color"}
-            onClick={() => updateSetting("colorMode", "color")}
-          >
-            Color
-          </ToggleButton>
-          <ToggleButton
-            active={settings.colorMode === "bw"}
-            onClick={() => updateSetting("colorMode", "bw")}
-          >
-            B&W
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Color</FieldLabel>
+        <ToggleGroup
+          value={[settings.colorMode]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("colorMode", values[0] as "color" | "bw")
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="color">Color</ToggleGroupItem>
+          <ToggleGroupItem value="bw">B&W</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Duplex */}
-      <SettingRow label="Two-sided">
-        <ButtonGroup>
-          <ToggleButton
-            active={!settings.duplex}
-            onClick={() => updateSetting("duplex", false)}
-          >
-            Off
-          </ToggleButton>
-          <ToggleButton
-            active={settings.duplex}
-            onClick={() => updateSetting("duplex", true)}
-          >
-            On
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Two-sided</FieldLabel>
+        <ToggleGroup
+          value={[settings.duplex ? "on" : "off"]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("duplex", values[0] === "on")
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="off">Off</ToggleGroupItem>
+          <ToggleGroupItem value="on">On</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Quality */}
-      <SettingRow label="Quality">
-        <ButtonGroup>
-          <ToggleButton
-            active={settings.quality === "draft"}
-            onClick={() => updateSetting("quality", "draft")}
-          >
-            Draft
-          </ToggleButton>
-          <ToggleButton
-            active={settings.quality === "normal"}
-            onClick={() => updateSetting("quality", "normal")}
-          >
-            Normal
-          </ToggleButton>
-          <ToggleButton
-            active={settings.quality === "best"}
-            onClick={() => updateSetting("quality", "best")}
-          >
-            Best
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Quality</FieldLabel>
+        <ToggleGroup
+          value={[settings.quality]}
+          onValueChange={(values) =>
+            values[0] &&
+            updateSetting("quality", values[0] as "draft" | "normal" | "best")
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="draft">Draft</ToggleGroupItem>
+          <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
+          <ToggleGroupItem value="best">Best</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Paper Size */}
-      <SettingRow label="Paper size">
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Paper size</FieldLabel>
         <Select
           value={settings.paperSize}
           onValueChange={(value) => value && updateSetting("paperSize", value)}
@@ -178,10 +161,11 @@ export function PrintSettingsForm({
             ))}
           </SelectContent>
         </Select>
-      </SettingRow>
+      </Field>
 
       {/* Paper Type */}
-      <SettingRow label="Paper type">
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Paper type</FieldLabel>
         <Select
           value={settings.paperType}
           onValueChange={(value) => value && updateSetting("paperType", value)}
@@ -199,41 +183,7 @@ export function PrintSettingsForm({
             ))}
           </SelectContent>
         </Select>
-      </SettingRow>
-    </div>
-  );
-}
-
-function SettingRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-sm font-medium">{label}</span>
-      {children}
-    </div>
-  );
-}
-
-interface ToggleButtonProps {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}
-
-function ToggleButton({ active, onClick, children }: ToggleButtonProps) {
-  return (
-    <Button
-      variant={active ? "default" : "outline"}
-      size="sm"
-      onClick={onClick}
-      className="min-w-[4rem]"
-    >
-      {children}
-    </Button>
+      </Field>
+    </FieldGroup>
   );
 }

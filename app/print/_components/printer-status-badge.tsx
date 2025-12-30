@@ -1,32 +1,42 @@
+// UI badge showing print flow status.
 "use client";
 
 import { cn } from "@/lib/utils";
+import type { PrintFlowStatus } from "../_lib/types";
 
-export type PrinterStatus = "ready" | "printing" | "error" | "offline";
+export type { PrintFlowStatus };
 
 interface PrinterStatusBadgeProps {
-  status: PrinterStatus;
+  status: PrintFlowStatus;
 }
 
 const STATUS_CONFIG: Record<
-  PrinterStatus,
+  PrintFlowStatus,
   { label: string; className: string }
 > = {
+  empty: {
+    label: "Ready",
+    className: "text-chart-3",
+  },
   ready: {
     label: "Ready",
     className: "text-chart-3",
+  },
+  sending: {
+    label: "Sending",
+    className: "text-chart-4",
   },
   printing: {
     label: "Printing",
     className: "text-chart-4",
   },
+  complete: {
+    label: "Complete",
+    className: "text-chart-3",
+  },
   error: {
     label: "Error",
     className: "text-destructive",
-  },
-  offline: {
-    label: "Offline",
-    className: "text-muted-foreground",
   },
 };
 
@@ -46,15 +56,16 @@ export function PrinterStatusBadge({ status }: PrinterStatusBadgeProps) {
   );
 }
 
-function StatusDot({ status }: { status: PrinterStatus }) {
+function StatusDot({ status }: { status: PrintFlowStatus }) {
   return (
     <span
       className={cn(
         "size-2 rounded-full",
-        status === "ready" && "bg-chart-3",
-        status === "printing" && "bg-chart-4 animate-pulse",
+        (status === "empty" || status === "ready" || status === "complete") &&
+          "bg-chart-3",
+        (status === "sending" || status === "printing") &&
+          "bg-chart-4 animate-pulse",
         status === "error" && "bg-destructive",
-        status === "offline" && "bg-muted-foreground",
       )}
     />
   );

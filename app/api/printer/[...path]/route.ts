@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const PRINTER_IP = "192.168.1.62";
+import { PRINTER_IP, PRINTER_HTTP_BASE } from "@/lib/config";
 
 export async function GET(
   request: NextRequest,
@@ -8,7 +7,7 @@ export async function GET(
 ) {
   const { path } = await params;
   const printerPath = "/" + path.join("/");
-  const url = `http://${PRINTER_IP}${printerPath}`;
+  const url = `${PRINTER_HTTP_BASE}${printerPath}`;
 
   try {
     const response = await fetch(url, {
@@ -48,7 +47,7 @@ export async function PUT(
 ) {
   const { path } = await params;
   const printerPath = "/" + path.join("/");
-  const url = `http://${PRINTER_IP}${printerPath}`;
+  const url = `${PRINTER_HTTP_BASE}${printerPath}`;
 
   try {
     const body = await request.text();
@@ -87,7 +86,7 @@ export async function POST(
 ) {
   const { path } = await params;
   const printerPath = "/" + path.join("/");
-  const url = `http://${PRINTER_IP}${printerPath}`;
+  const url = `${PRINTER_HTTP_BASE}${printerPath}`;
 
   try {
     const body = await request.text();
@@ -132,7 +131,7 @@ export async function DELETE(
 ) {
   const { path } = await params;
   const printerPath = "/" + path.join("/");
-  const url = `http://${PRINTER_IP}${printerPath}`;
+  const url = `${PRINTER_HTTP_BASE}${printerPath}`;
 
   try {
     const response = await fetch(url, {

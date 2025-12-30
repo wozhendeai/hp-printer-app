@@ -1,8 +1,14 @@
 "use client";
 
 import { Monitor, FileStack, Info } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
+import {
+  Field,
+  FieldContent,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -22,7 +28,7 @@ import type {
   CopyColorMode,
   CopyQuality,
   CopyResize,
-} from "../_lib/copy-types";
+} from "@/lib/types";
 
 interface CopySettingsFormProps {
   settings: CopySettings;
@@ -49,107 +55,102 @@ export function CopySettingsForm({
   };
 
   return (
-    <div
+    <FieldGroup
       className={cn(
-        "divide-y divide-border border rounded-xl overflow-hidden bg-card",
+        "bg-card rounded-xl border border-border divide-y divide-border overflow-hidden",
         disabled && "opacity-50 pointer-events-none",
       )}
     >
       {/* Source: Flatbed | ADF */}
-      <SettingRow
-        label="Source"
-        tooltip={
-          <>
-            <p className="font-medium mb-1">Flatbed</p>
-            <p className="mb-2">
-              Place a single page face-down on the glass scanner bed.
-            </p>
-            <p className="font-medium mb-1">ADF (Auto Document Feeder)</p>
-            <p>
-              Load multiple pages face-up in the top tray for automatic feeding.
-            </p>
-          </>
-        }
-      >
-        <SegmentedControl
-          options={["Platen", "Adf"] as const}
-          value={settings.source}
-          onChange={(v) => updateSetting("source", v as CopySource)}
-          renderLabel={(opt) => (
-            <span className="flex items-center gap-1.5">
-              {opt === "Platen" ? (
-                <Monitor className="size-4" />
-              ) : (
-                <FileStack className="size-4" />
-              )}
-              {opt === "Platen" ? "Flatbed" : "ADF"}
-            </span>
-          )}
-        />
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldContent>
+          <FieldLabel className="flex items-center gap-1.5">
+            Source
+            <Tooltip>
+              <TooltipTrigger className="text-muted-foreground hover:text-foreground">
+                <Info className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[240px] text-left">
+                <p className="font-medium mb-1">Flatbed</p>
+                <p className="mb-2">
+                  Place a single page face-down on the glass scanner bed.
+                </p>
+                <p className="font-medium mb-1">ADF (Auto Document Feeder)</p>
+                <p>
+                  Load multiple pages face-up in the top tray for automatic
+                  feeding.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </FieldLabel>
+        </FieldContent>
+        <ToggleGroup
+          value={[settings.source]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("source", values[0] as CopySource)
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="Platen" className="gap-1.5">
+            <Monitor className="size-4" />
+            Flatbed
+          </ToggleGroupItem>
+          <ToggleGroupItem value="Adf" className="gap-1.5">
+            <FileStack className="size-4" />
+            ADF
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Color: Color | B&W */}
-      <SettingRow label="Color">
-        <ButtonGroup>
-          <ToggleButton
-            active={settings.colorMode === "color"}
-            onClick={() => updateSetting("colorMode", "color" as CopyColorMode)}
-          >
-            Color
-          </ToggleButton>
-          <ToggleButton
-            active={settings.colorMode === "bw"}
-            onClick={() => updateSetting("colorMode", "bw" as CopyColorMode)}
-          >
-            B&W
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Color</FieldLabel>
+        <ToggleGroup
+          value={[settings.colorMode]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("colorMode", values[0] as CopyColorMode)
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="color">Color</ToggleGroupItem>
+          <ToggleGroupItem value="bw">B&W</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Two-sided: Off | On */}
-      <SettingRow label="Two-sided">
-        <ButtonGroup>
-          <ToggleButton
-            active={!settings.duplex}
-            onClick={() => updateSetting("duplex", false)}
-          >
-            Off
-          </ToggleButton>
-          <ToggleButton
-            active={settings.duplex}
-            onClick={() => updateSetting("duplex", true)}
-          >
-            On
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Two-sided</FieldLabel>
+        <ToggleGroup
+          value={[settings.duplex ? "on" : "off"]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("duplex", values[0] === "on")
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="off">Off</ToggleGroupItem>
+          <ToggleGroupItem value="on">On</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Quality: Draft | Normal | Best */}
-      <SettingRow label="Quality">
-        <ButtonGroup>
-          <ToggleButton
-            active={settings.quality === "draft"}
-            onClick={() => updateSetting("quality", "draft" as CopyQuality)}
-          >
-            Draft
-          </ToggleButton>
-          <ToggleButton
-            active={settings.quality === "normal"}
-            onClick={() => updateSetting("quality", "normal" as CopyQuality)}
-          >
-            Normal
-          </ToggleButton>
-          <ToggleButton
-            active={settings.quality === "best"}
-            onClick={() => updateSetting("quality", "best" as CopyQuality)}
-          >
-            Best
-          </ToggleButton>
-        </ButtonGroup>
-      </SettingRow>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Quality</FieldLabel>
+        <ToggleGroup
+          value={[settings.quality]}
+          onValueChange={(values) =>
+            values[0] && updateSetting("quality", values[0] as CopyQuality)
+          }
+          variant="segmented"
+        >
+          <ToggleGroupItem value="draft">Draft</ToggleGroupItem>
+          <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
+          <ToggleGroupItem value="best">Best</ToggleGroupItem>
+        </ToggleGroup>
+      </Field>
 
       {/* Resize: Dropdown */}
-      <SettingRow label="Resize">
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Resize</FieldLabel>
         <Select
           value={settings.resize}
           onValueChange={(value) =>
@@ -169,119 +170,30 @@ export function CopySettingsForm({
             ))}
           </SelectContent>
         </Select>
-      </SettingRow>
+      </Field>
 
       {/* Lighter/Darker: Slider */}
-      <SettingRow label="Lighter/Darker">
-        <BrightnessSlider
-          value={settings.brightness}
-          onChange={(v) => updateSetting("brightness", v)}
-        />
-      </SettingRow>
-    </div>
-  );
-}
-
-function SettingRow({
-  label,
-  tooltip,
-  children,
-}: {
-  label: string;
-  tooltip?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3">
-      <span className="text-sm font-medium flex items-center gap-1.5">
-        {label}
-        {tooltip && (
-          <Tooltip>
-            <TooltipTrigger className="text-muted-foreground hover:text-foreground">
-              <Info className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[240px] text-left">
-              {tooltip}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-interface ToggleButtonProps {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}
-
-function ToggleButton({ active, onClick, children }: ToggleButtonProps) {
-  return (
-    <Button
-      variant={active ? "default" : "outline"}
-      size="sm"
-      onClick={onClick}
-      className="min-w-[4rem]"
-    >
-      {children}
-    </Button>
-  );
-}
-
-function SegmentedControl<T extends string>({
-  options,
-  value,
-  onChange,
-  renderLabel,
-}: {
-  options: readonly T[];
-  value: T;
-  onChange: (value: T) => void;
-  renderLabel: (option: T) => React.ReactNode;
-}) {
-  return (
-    <div className="flex bg-muted rounded-lg p-1">
-      {options.map((option) => (
-        <button
-          key={option}
-          onClick={() => onChange(option)}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200",
-            value === option
-              ? "bg-foreground text-background shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {renderLabel(option)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function BrightnessSlider({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 w-40">
-      <input
-        type="range"
-        min="-5"
-        max="5"
-        step="1"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-foreground"
-      />
-      <span className="text-sm font-medium tabular-nums w-6 text-right">
-        {value > 0 ? `+${value}` : value}
-      </span>
-    </div>
+      <Field orientation="horizontal" className="p-4">
+        <FieldLabel>Lighter/Darker</FieldLabel>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[settings.brightness]}
+            onValueChange={(value) => {
+              const newValue = Array.isArray(value) ? value[0] : value;
+              updateSetting("brightness", newValue);
+            }}
+            min={-5}
+            max={5}
+            step={1}
+            className="w-24"
+          />
+          <span className="text-sm font-medium tabular-nums w-6 text-right">
+            {settings.brightness > 0
+              ? `+${settings.brightness}`
+              : settings.brightness}
+          </span>
+        </div>
+      </Field>
+    </FieldGroup>
   );
 }

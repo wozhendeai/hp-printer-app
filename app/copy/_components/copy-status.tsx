@@ -9,42 +9,61 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import type { CopyState } from "../_lib/copy-types";
+import type { CopyErrorPhase } from "../_lib/types";
 
 interface CopyStatusProps {
-  state: CopyState;
+  isScanning: boolean;
+  isPrinting: boolean;
+  isComplete: boolean;
+  error: Error | null;
+  errorPhase: CopyErrorPhase | null;
+  scanProgress: string | null;
+  printProgress: { current: number; total: number } | null;
+  completedCopies: number | null;
   onCancel: () => void;
   onReset: () => void;
 }
 
-export function CopyStatus({ state, onCancel, onReset }: CopyStatusProps) {
-  if (state.status === "idle") {
-    return null;
-  }
-
-  if (state.status === "scanning") {
-    return <ScanningStatus progress={state.progress} onCancel={onCancel} />;
-  }
-
-  if (state.status === "printing") {
+export function CopyStatus({
+  isScanning,
+  isPrinting,
+  isComplete,
+  error,
+  errorPhase,
+  scanProgress,
+  printProgress,
+  completedCopies,
+  onCancel,
+  onReset,
+}: CopyStatusProps) {
+  if (isScanning) {
     return (
-      <PrintingStatus
-        currentCopy={state.currentCopy}
-        totalCopies={state.totalCopies}
+      <ScanningStatus
+        progress={scanProgress ?? "Starting..."}
         onCancel={onCancel}
       />
     );
   }
 
-  if (state.status === "complete") {
-    return <CompleteStatus copies={state.copies} onReset={onReset} />;
+  if (isPrinting && printProgress) {
+    return (
+      <PrintingStatus
+        currentCopy={printProgress.current}
+        totalCopies={printProgress.total}
+        onCancel={onCancel}
+      />
+    );
   }
 
-  if (state.status === "error") {
+  if (isComplete && completedCopies !== null) {
+    return <CompleteStatus copies={completedCopies} onReset={onReset} />;
+  }
+
+  if (error && errorPhase) {
     return (
       <ErrorStatus
-        message={state.message}
-        phase={state.phase}
+        message={error.message}
+        phase={errorPhase}
         onRetry={onReset}
       />
     );

@@ -2,12 +2,10 @@
 
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import type { PrintSettings } from "@/lib/types";
 import { UploadZone } from "./_components/upload-zone";
 import { FilePreview } from "./_components/file-preview";
-import {
-  PrintSettingsForm,
-  type PrintSettings,
-} from "./_components/print-settings";
+import { PrintSettingsForm } from "./_components/print-settings";
 import {
   PrintingStatus,
   PrintComplete,
@@ -71,7 +69,7 @@ export default function PrintPage() {
     [],
   );
 
-  const { state, selectFile, removeFile, startPrint, cancel, reset } =
+  const { state, status, selectFile, removeFile, startPrint, cancel, reset } =
     usePrintFlow(settings, {
       onJobComplete: (file, pages, colorMode) => {
         addToRecentJobs(file, pages, colorMode, "completed");
@@ -89,29 +87,28 @@ export default function PrintPage() {
   return (
     <div className="flex-1 overflow-auto">
       <div className="p-6 max-w-lg mx-auto space-y-6">
-        {state.type === "empty" && <UploadZone onFileSelect={selectFile} />}
+        {status === "empty" && <UploadZone onFileSelect={selectFile} />}
 
-        {state.type === "ready" && (
+        {status === "ready" && state.file && (
           <FilePreview file={state.file} onRemove={removeFile} />
         )}
 
-        {(state.type === "sending" || state.type === "printing") && (
+        {(status === "sending" || status === "printing") && state.file && (
           <PrintingStatus
             job={{
               fileName: state.file.name,
               fileType: state.file.type === "application/pdf" ? "pdf" : "image",
-              totalPages:
-                state.type === "printing" ? state.totalPages : undefined,
+              totalPages: state.totalPages > 0 ? state.totalPages : undefined,
               currentPage:
-                state.type === "printing" ? state.currentPage : undefined,
+                state.currentPage > 0 ? state.currentPage : undefined,
               colorMode: settings.colorMode,
             }}
-            progress={state.type === "printing" ? state.progress : 0}
+            progress={state.progress}
             onCancel={cancel}
           />
         )}
 
-        {state.type === "complete" && (
+        {status === "complete" && state.file && (
           <PrintComplete
             job={{
               fileName: state.file.name,
@@ -123,33 +120,33 @@ export default function PrintPage() {
           />
         )}
 
-        {state.type === "error" && (
+        {status === "error" && state.error && (
           <PrintError
-            errorMessage={state.errorMessage}
+            errorMessage={state.error}
             onRetry={startPrint}
             onCancel={cancel}
           />
         )}
 
-        {(state.type === "empty" || state.type === "ready") && (
+        {(status === "empty" || status === "ready") && (
           <PrintSettingsForm settings={settings} onChange={setSettings} />
         )}
 
-        {state.type === "ready" && (
+        {status === "ready" && (
           <Button className="w-full" size="lg" onClick={startPrint}>
             Print
           </Button>
         )}
 
-        {state.type === "empty" && (
+        {status === "empty" && (
           <Button className="w-full" size="lg" disabled>
             Print
           </Button>
         )}
 
-        {(state.type === "empty" ||
-          state.type === "ready" ||
-          state.type === "complete") && <RecentJobs jobs={recentJobs} />}
+        {(status === "empty" ||
+          status === "ready" ||
+          status === "complete") && <RecentJobs jobs={recentJobs} />}
       </div>
     </div>
   );

@@ -1,31 +1,26 @@
+// Hook for managing the print flow.
 "use client";
 
-import { useReducer, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { printReducer, initialState, type PrintState } from "./print-reducer";
-import { submitPrintJob } from "./print-api";
-import {
-  usePrintJobStatus,
-  useCancelPrintJob,
-} from "@/app/_lib/queries/job-queries";
-import { printJobKeys } from "@/app/_lib/queries/keys";
-import type { PrintSettings } from "../_components/print-settings";
-import type { PrinterStatus } from "../_components/printer-status-badge";
+import { submitPrintJob } from "@/lib/api/jobs";
+import { usePrintJobProgress, useCancelPrintJob } from "@/lib/queries/jobs";
+import { jobKeys } from "@/lib/queries/keys";
+import type { PrintSettings } from "@/lib/types";
+import type { PrintFlowState, PrintFlowStatus } from "./types";
 
 export interface UsePrintFlowOptions {
-  /** Called when a print job completes successfully */
   onJobComplete?: (
     file: File,
     pages: number,
     colorMode: "color" | "bw",
   ) => void;
-  /** Called when a print job fails */
   onJobError?: (file: File, error: string) => void;
 }
 
 export interface UsePrintFlowResult {
-  state: PrintState;
-  printerStatus: PrinterStatus;
+  state: PrintFlowState;
+  status: PrintFlowStatus;
   selectFile: (file: File) => void;
   removeFile: () => void;
   startPrint: () => void;
@@ -39,10 +34,15 @@ export function usePrintFlow(
 ): UsePrintFlowResult {
   const { onJobComplete, onJobError } = options;
 
-  const [state, dispatch] = useReducer(printReducer, initialState);
+  // Core state: file selection and job tracking
+  const [file, setFile] = useState<File | null>(null);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [isComplete, setIsComplete] = useState(false);
+
   const queryClient = useQueryClient();
 
-  // Store current settings in ref to avoid stale closures in callbacks
+  // Store current settings in ref to avoid stale closures
   const settingsRef = useRef(settings);
   useEffect(() => {
     settingsRef.current = settings;
@@ -56,139 +56,180 @@ export function usePrintFlow(
     onJobErrorRef.current = onJobError;
   }, [onJobComplete, onJobError]);
 
-  // Get job ID from state if we're in a printing state
-  const jobId =
-    state.type === "sending" || state.type === "printing" ? state.jobId : null;
-
   // Poll job status when we have an active job
-  const shouldPoll = state.type === "sending" || state.type === "printing";
-  const jobStatusQuery = usePrintJobStatus(jobId, shouldPoll);
+  const shouldPoll = jobId !== null && !isComplete && !localError;
+  const jobStatusQuery = usePrintJobProgress(jobId, shouldPoll);
 
-  // Process job status updates
-  useEffect(() => {
-    if (!jobStatusQuery.data || !shouldPoll) return;
-
-    const status = jobStatusQuery.data;
-    const file =
-      state.type === "sending" || state.type === "printing" ? state.file : null;
-
-    if (status.state === "processing") {
-      // Transition to printing state if we have page info
-      if (state.type === "sending" && status.totalPages) {
-        dispatch({
-          type: "START_PRINTING",
-          totalPages: status.totalPages,
-        });
-      }
-
-      // Update progress
-      if (state.type === "printing" || status.totalPages) {
-        const currentPage = status.currentPage ?? 1;
-        const totalPages = status.totalPages ?? 1;
-        const progress = Math.round((currentPage / totalPages) * 100);
-        dispatch({ type: "PRINT_PROGRESS", currentPage, progress });
-      }
-    } else if (status.state === "completed") {
-      dispatch({ type: "COMPLETE" });
-      if (file) {
-        onJobCompleteRef.current?.(
-          file,
-          status.totalPages ?? 1,
-          settingsRef.current.colorMode,
-        );
-      }
-    } else if (status.state === "aborted" || status.state === "canceled") {
-      const message = status.errorMessage ?? "Print job failed";
-      dispatch({ type: "ERROR", message });
-      if (file) {
-        onJobErrorRef.current?.(file, message);
-      }
+  // Derive progress from query data
+  const { progress, currentPage, totalPages } = useMemo(() => {
+    if (!jobStatusQuery.data) {
+      return { progress: 0, currentPage: 0, totalPages: 0 };
     }
-    // "pending" state - keep polling (handled by refetchInterval)
-  }, [jobStatusQuery.data, shouldPoll, state.type, state]);
+    const data = jobStatusQuery.data;
+    const currPage = data.currentPage ?? 1;
+    const totPages = data.totalPages ?? 1;
+    const prog = Math.round((currPage / totPages) * 100);
+    return { progress: prog, currentPage: currPage, totalPages: totPages };
+  }, [jobStatusQuery.data]);
 
-  // Handle query errors
+  // Derive error from query
+  const queryError =
+    jobStatusQuery.error instanceof Error
+      ? jobStatusQuery.error.message
+      : jobStatusQuery.error
+        ? "Failed to get job status"
+        : null;
+
+  // Check for job completion or failure from query data
+  const jobState = jobStatusQuery.data?.state;
+  const jobCompleted = jobState === "completed";
+  const jobFailed = jobState === "aborted" || jobState === "canceled";
+  const jobErrorMessage =
+    jobStatusQuery.data?.errorMessage ?? "Print job failed";
+
+  // Track completion callback firing
+  const completionHandledRef = useRef(false);
+
+  // Handle completion callback - syncs query state to local state
   useEffect(() => {
-    if (!jobStatusQuery.error || !shouldPoll) return;
-
-    const file =
-      state.type === "sending" || state.type === "printing" ? state.file : null;
-    const message =
-      jobStatusQuery.error instanceof Error
-        ? jobStatusQuery.error.message
-        : "Failed to get job status";
-    dispatch({ type: "ERROR", message });
-    if (file) {
-      onJobErrorRef.current?.(file, message);
+    if (jobCompleted && file && !completionHandledRef.current) {
+      completionHandledRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsComplete(true);
+      onJobCompleteRef.current?.(
+        file,
+        jobStatusQuery.data?.totalPages ?? 1,
+        settingsRef.current.colorMode,
+      );
     }
-  }, [jobStatusQuery.error, shouldPoll, state]);
+  }, [jobCompleted, file, jobStatusQuery.data?.totalPages]);
+
+  // Handle failure callback - syncs query state to local state
+  useEffect(() => {
+    if (jobFailed && file && !localError) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocalError(jobErrorMessage);
+      onJobErrorRef.current?.(file, jobErrorMessage);
+    }
+  }, [jobFailed, file, jobErrorMessage, localError]);
+
+  // Handle query error callback - syncs query error to local state
+  useEffect(() => {
+    if (queryError && file && !localError && shouldPoll) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLocalError(queryError);
+      onJobErrorRef.current?.(file, queryError);
+    }
+  }, [queryError, file, localError, shouldPoll]);
+
+  // Combine error sources
+  const error =
+    localError ?? (jobFailed ? jobErrorMessage : null) ?? queryError;
+
+  // Build state object for consumers
+  const state: PrintFlowState = useMemo(
+    () => ({
+      file,
+      jobId,
+      progress: isComplete ? 100 : progress,
+      currentPage,
+      totalPages,
+      error,
+    }),
+    [file, jobId, progress, currentPage, totalPages, error, isComplete],
+  );
+
+  // Derive status from state
+  const status: PrintFlowStatus = !file
+    ? "empty"
+    : error
+      ? "error"
+      : isComplete
+        ? "complete"
+        : jobId !== null && totalPages > 0
+          ? "printing"
+          : jobId !== null
+            ? "sending"
+            : "ready";
 
   // Cancel print job mutation
   const cancelPrintJobMutation = useCancelPrintJob();
 
   // Submit print job mutation
   const submitJobMutation = useMutation({
-    mutationFn: async (file: File) => {
-      return submitPrintJob(file, settingsRef.current);
+    mutationFn: async (fileToSubmit: File) => {
+      return submitPrintJob(fileToSubmit, settingsRef.current);
     },
     onSuccess: (data) => {
-      dispatch({ type: "START_SEND", jobId: data.jobId });
+      setJobId(data.jobId);
+      completionHandledRef.current = false;
     },
-    onError: (error) => {
+    onError: (err) => {
       const message =
-        error instanceof Error ? error.message : "Failed to submit print job";
-      dispatch({ type: "ERROR", message });
-      if (state.type === "ready") {
-        onJobErrorRef.current?.(state.file, message);
+        err instanceof Error ? err.message : "Failed to submit print job";
+      setLocalError(message);
+      if (file) {
+        onJobErrorRef.current?.(file, message);
       }
     },
   });
 
-  // Derive printer status from state
-  const printerStatus: PrinterStatus =
-    state.type === "printing" || state.type === "sending"
-      ? "printing"
-      : state.type === "error"
-        ? "error"
-        : "ready";
-
-  const selectFile = useCallback((file: File) => {
-    dispatch({ type: "SELECT_FILE", file });
+  const selectFile = useCallback((newFile: File) => {
+    setFile(newFile);
+    setJobId(null);
+    setLocalError(null);
+    setIsComplete(false);
+    completionHandledRef.current = false;
   }, []);
 
   const removeFile = useCallback(() => {
-    dispatch({ type: "REMOVE_FILE" });
+    setFile(null);
+    setJobId(null);
+    setLocalError(null);
+    setIsComplete(false);
+    completionHandledRef.current = false;
   }, []);
 
   const reset = useCallback(() => {
-    dispatch({ type: "RESET" });
+    setFile(null);
+    setJobId(null);
+    setLocalError(null);
+    setIsComplete(false);
+    completionHandledRef.current = false;
   }, []);
 
   const cancel = useCallback(async () => {
     // Cancel job on printer if we have a job ID
-    if (state.type === "sending" || state.type === "printing") {
+    if (jobId !== null) {
       try {
-        await cancelPrintJobMutation.mutateAsync(state.jobId);
+        await cancelPrintJobMutation.mutateAsync(jobId);
       } catch {
         // Ignore cancel errors - job may already be done
       }
       // Clear the job status query
       queryClient.removeQueries({
-        queryKey: printJobKeys.detail(String(state.jobId)),
+        queryKey: jobKeys.progress(jobId),
       });
     }
 
-    dispatch({ type: "CANCEL" });
-  }, [state, cancelPrintJobMutation, queryClient]);
+    // Keep file but clear job state
+    setJobId(null);
+    setLocalError(null);
+    setIsComplete(false);
+    completionHandledRef.current = false;
+  }, [jobId, cancelPrintJobMutation, queryClient]);
 
   const startPrint = useCallback(() => {
-    if (state.type !== "ready") return;
-    submitJobMutation.mutate(state.file);
-  }, [state, submitJobMutation]);
+    if (!file || status !== "ready") return;
+    setLocalError(null);
+    setIsComplete(false);
+    completionHandledRef.current = false;
+    submitJobMutation.mutate(file);
+  }, [file, status, submitJobMutation]);
 
   return {
     state,
-    printerStatus,
+    status,
     selectFile,
     removeFile,
     startPrint,

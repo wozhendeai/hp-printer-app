@@ -1,25 +1,30 @@
 import { AlertCircle, Loader2, ScanLine } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ScanSettings } from "@/app/_lib/printer-api";
+import type { ScanSettings } from "@/lib/types";
 import {
   COLOR_MODE_LABELS,
   FORMAT_LABELS,
   SOURCE_LABELS,
-  type ScanState,
-} from "../_lib/types";
+} from "@/lib/constants";
 
 interface ScanAreaProps {
-  scanState: ScanState;
   settings: ScanSettings;
   disabled: boolean;
   onScan: () => void;
+  isPending: boolean;
+  isSuccess: boolean;
+  isError: boolean;
+  errorMessage?: string;
 }
 
 export function ScanArea({
-  scanState,
   settings,
   disabled,
   onScan,
+  isPending,
+  isSuccess,
+  isError,
+  errorMessage,
 }: ScanAreaProps) {
   const sourceLabel = SOURCE_LABELS[settings.source];
 
@@ -30,14 +35,14 @@ export function ScanArea({
       className={cn(
         "w-full aspect-[4/3] rounded-2xl border-2 border-dashed transition-all duration-200",
         "flex flex-col items-center justify-center gap-3",
-        scanState.status === "scanning"
+        isPending
           ? "border-muted-foreground/30 bg-muted/30"
-          : scanState.status === "error"
+          : isError
             ? "border-status-error/30 bg-status-error/5"
             : "border-border hover:border-foreground/30 hover:bg-muted/20 active:scale-[0.99]",
       )}
     >
-      {scanState.status === "scanning" ? (
+      {isPending ? (
         <>
           <div className="relative size-16">
             <ScanLine className="size-16 text-muted-foreground animate-pulse" />
@@ -48,7 +53,7 @@ export function ScanArea({
             Please wait while the document is scanned
           </span>
         </>
-      ) : scanState.status === "complete" ? (
+      ) : isSuccess ? (
         <>
           <ScanLine className="size-12 text-status-ready" />
           <span className="text-lg font-semibold">Scan Complete</span>
@@ -56,13 +61,11 @@ export function ScanArea({
             Tap to scan again
           </span>
         </>
-      ) : scanState.status === "error" ? (
+      ) : isError ? (
         <>
           <AlertCircle className="size-12 text-status-error" />
           <span className="text-lg font-semibold">Scan Failed</span>
-          <span className="text-sm text-muted-foreground">
-            {scanState.message}
-          </span>
+          <span className="text-sm text-muted-foreground">{errorMessage}</span>
           <span className="text-xs text-muted-foreground mt-1">
             Tap to try again
           </span>

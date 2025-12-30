@@ -1,6 +1,6 @@
 import { AlertCircle, FileStack, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ScannerStatus } from "@/app/_lib/printer-api";
+import type { ScannerStatus } from "@/lib/types";
 
 interface ScannerStatusBadgeProps {
   status: ScannerStatus | null;
@@ -27,15 +27,15 @@ export function ScannerStatusBadge({ status, error }: ScannerStatusBadgeProps) {
   }
 
   const stateConfig = {
-    Idle: { color: "bg-status-ready", label: "Ready" },
-    Processing: { color: "bg-status-warning", label: "Scanning" },
-    Stopped: { color: "bg-status-error", label: "Stopped" },
+    idle: { color: "bg-status-ready", label: "Ready" },
+    processing: { color: "bg-status-warning", label: "Scanning" },
+    stopped: { color: "bg-status-error", label: "Stopped" },
   } as const;
 
   const adfConfig = {
-    ScannerAdfEmpty: { label: "ADF Empty", icon: null },
-    ScannerAdfLoaded: { label: "Documents in ADF", icon: FileStack },
-    ScannerAdfJam: { label: "ADF Jam", icon: AlertCircle },
+    empty: { label: "ADF Empty", icon: null },
+    loaded: { label: "Documents in ADF", icon: FileStack },
+    jam: { label: "ADF Jam", icon: AlertCircle },
   } as const;
 
   const state = stateConfig[status.state];
@@ -47,7 +47,7 @@ export function ScannerStatusBadge({ status, error }: ScannerStatusBadgeProps) {
         <div className={cn("size-2 rounded-full", state.color)} />
         <span className="text-sm font-medium">{state.label}</span>
       </div>
-      {status.adfState !== "ScannerAdfEmpty" && (
+      {status.adfState !== "empty" && (
         <div className="flex items-center gap-1 text-sm text-muted-foreground">
           {adf.icon && <adf.icon className="size-4" />}
           <span>{adf.label}</span>

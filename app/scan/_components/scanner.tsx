@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   FileText,
-  Image,
+  Image as ImageIcon,
   Settings,
   Monitor,
   FileStack,
@@ -41,18 +42,19 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { performScan } from "@/lib/api/printer";
+import { useScannerStatus } from "@/lib/queries/printer";
+import type {
+  ScanColorMode,
+  ScanSource,
+  ScanFormat,
+  ScanIntent,
+  ScanSettings,
+} from "@/lib/types";
+import type { PresetMode, RecentScan } from "../_lib/types";
 import {
-  performScan,
   SCAN_SIZES,
-  type ScanColorMode,
-  type ScanSource,
-  type ScanFormat,
-  type ScanIntent,
-} from "@/app/_lib/printer-api";
-import { useScannerStatus } from "@/app/_lib/queries/printer-queries";
-
-import {
-  DEFAULT_SETTINGS,
+  DEFAULT_SCAN_SETTINGS,
   derivePreset,
   deriveScanSizeKey,
   indexToResolution,
@@ -60,19 +62,14 @@ import {
   RESOLUTIONS,
   resolutionToIndex,
   SCAN_SIZE_LABELS,
-  type PresetMode,
-  type RecentScan,
-  type ScanState,
-} from "../_lib/types";
+} from "@/lib/constants";
 import { ScanArea } from "./scan-area";
 import { ScannerStatusBadge } from "./scanner-status-badge";
 import { ScanThumbnail } from "./scan-thumbnail";
 
-// Preset item overrides for card layout (variant handles base styling)
 const presetItemClassName = "flex-1 flex-col gap-1 h-auto px-4 py-3";
 
 export function Scanner() {
-  // Generate stable mock recent scans data without calling impure functions in render
   function getMockRecentScans(): RecentScan[] {
     const now = Date.now();
     const scans: RecentScan[] = [
@@ -98,14 +95,29 @@ export function Scanner() {
     return scans;
   }
 
-  const [scanState, setScanState] = useState<ScanState>({ status: "idle" });
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState(DEFAULT_SCAN_SETTINGS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [recentScans, setRecentScans] = useState<RecentScan[]>(() =>
     getMockRecentScans(),
   );
 
-  // Derived values (no separate state needed)
+  // Scan mutation replaces useState<ScanState>
+  const scanMutation = useMutation({
+    mutationFn: (scanSettings: ScanSettings) => performScan(scanSettings),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const newScan: RecentScan = {
+        id: crypto.randomUUID(),
+        format: settings.format,
+        timestamp: new Date(),
+        blob,
+        url,
+      };
+      setRecentScans((scans) => [newScan, ...scans].slice(0, 10));
+    },
+  });
+
+  // Derived values
   const preset = useMemo(() => derivePreset(settings), [settings]);
   const scanSizeKey = useMemo(() => deriveScanSizeKey(settings), [settings]);
   const resolutionIndex = useMemo(
@@ -145,7 +157,7 @@ export function Scanner() {
   );
 
   const handleResolutionChange = useCallback(
-    (value: number | readonly number[], _eventDetails?: { reason: string }) => {
+    (value: number | readonly number[]) => {
       const index = Array.isArray(value) ? value[0] : value;
       const resolution = indexToResolution(index);
       setSettings((prev) => ({ ...prev, resolution }));
@@ -153,39 +165,17 @@ export function Scanner() {
     [],
   );
 
-  const handleScan = useCallback(async () => {
-    // Reset if complete or error
-    if (scanState.status === "complete" || scanState.status === "error") {
-      setScanState({ status: "idle" });
+  const handleScan = useCallback(() => {
+    // Reset if complete or error, otherwise start scan
+    if (scanMutation.isSuccess || scanMutation.isError) {
+      scanMutation.reset();
       return;
     }
 
-    if (scanState.status === "scanning") return;
+    if (scanMutation.isPending) return;
 
-    setScanState({ status: "scanning" });
-
-    try {
-      // Settings already matches API shape - no transformation needed
-      const blob = await performScan(settings);
-      const url = URL.createObjectURL(blob);
-
-      const newScan: RecentScan = {
-        id: crypto.randomUUID(),
-        format: settings.format,
-        timestamp: new Date(),
-        blob,
-        url,
-      };
-
-      setRecentScans((scans) => [newScan, ...scans].slice(0, 10));
-      setScanState({ status: "complete" });
-    } catch (err) {
-      setScanState({
-        status: "error",
-        message: err instanceof Error ? err.message : "Scan failed",
-      });
-    }
-  }, [scanState.status, settings]);
+    scanMutation.mutate(settings);
+  }, [scanMutation, settings]);
 
   const handleDownload = useCallback((scan: RecentScan) => {
     const ext = scan.format === "image/jpeg" ? "jpg" : "pdf";
@@ -198,7 +188,7 @@ export function Scanner() {
   }, []);
 
   const isScanDisabled =
-    scanState.status === "scanning" || scannerStatus.data?.state === "Stopped";
+    scanMutation.isPending || scannerStatus.data?.state === "stopped";
 
   return (
     <div className="w-full max-w-lg mx-auto px-4 py-6 space-y-4">
@@ -225,7 +215,7 @@ export function Scanner() {
           <span className="text-xs opacity-70">PDF · 300 DPI</span>
         </ToggleGroupItem>
         <ToggleGroupItem value="photo" className={presetItemClassName}>
-          <Image className="size-6" />
+          <ImageIcon className="size-6" />
           <span className="font-semibold text-sm">Photo</span>
           <span className="text-xs opacity-70">JPEG · 600 DPI</span>
         </ToggleGroupItem>
@@ -238,10 +228,17 @@ export function Scanner() {
 
       {/* Scan Area */}
       <ScanArea
-        scanState={scanState}
         settings={settings}
         disabled={isScanDisabled}
         onScan={handleScan}
+        isPending={scanMutation.isPending}
+        isSuccess={scanMutation.isSuccess}
+        isError={scanMutation.isError}
+        errorMessage={
+          scanMutation.error instanceof Error
+            ? scanMutation.error.message
+            : undefined
+        }
       />
 
       {/* Settings Card */}

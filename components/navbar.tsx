@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Printer, Copy, Scan } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RefreshButton } from "@/app/_components/refresh-button";
 import { StatusBar } from "./status-bar";
 
 const navItems = [
@@ -45,7 +44,6 @@ export function Navbar() {
           })}
         </div>
       </div>
-      <RefreshButton />
     </nav>
   );
 }

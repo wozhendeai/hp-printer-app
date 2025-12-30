@@ -2,7 +2,7 @@
 
 import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { InkLevel, PaperTray } from "@/app/_lib/printer-api";
+import type { InkLevel, PaperTray } from "@/lib/types";
 
 // Compact ink dots showing all cartridge colors
 function InkDots({ levels }: { levels: InkLevel[] }) {

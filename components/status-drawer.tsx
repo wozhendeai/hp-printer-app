@@ -23,11 +23,8 @@ import {
   type CurrentJob,
   type DisplayAlert,
 } from "./_lib/printer-status-context";
-import {
-  formatMediaSize,
-  type InkLevel,
-  type PaperTray,
-} from "@/app/_lib/printer-api";
+import { formatMediaSize } from "@/lib/api/printer";
+import type { InkLevel, PaperTray } from "@/lib/types";
 
 // Section header component
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -38,7 +35,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Job type icon mapping
+// Job type icon mapping (PascalCase matches CurrentJob.type from context)
 const jobIcons = {
   Print: Printer,
   Scan: ScanLine,
@@ -99,7 +96,7 @@ function CurrentJobSection({
   );
 }
 
-// Alert severity icons
+// Alert severity icons (PascalCase matches DisplayAlert.severity from context)
 const alertIcons = {
   Error: XCircle,
   Warning: AlertTriangle,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { X, FileText, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -59,7 +60,12 @@ export function FilePreview({
     <Item variant="outline" className="rounded-xl">
       <ItemMedia variant="image" className="size-14 rounded-lg">
         {fileType === "image" && imagePreview ? (
-          <img src={imagePreview} alt={file.name} />
+          <Image
+            src={imagePreview}
+            alt={file.name}
+            fill
+            className="object-cover"
+          />
         ) : (
           <div className="size-full bg-muted flex items-center justify-center">
             <FileIcon type={fileType} />

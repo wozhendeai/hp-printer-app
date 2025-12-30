@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Printer, type FullRequest, type FullResponse } from "ipp";
-
-const PRINTER_IP = "192.168.1.62";
-const PRINTER_URI = `ipp://${PRINTER_IP}:631/ipp/print`;
+import { PRINTER_URI } from "@/lib/config";
+import type { PrintSettings } from "@/lib/types";
 
 // Map app settings to IPP attributes
 const MEDIA_MAP: Record<string, string> = {
@@ -21,15 +20,6 @@ const QUALITY_MAP: Record<string, number> = {
   normal: 4,
   best: 5,
 };
-
-interface PrintSettings {
-  copies: number;
-  colorMode: "color" | "bw";
-  duplex: boolean;
-  quality: "draft" | "normal" | "best";
-  paperSize: string;
-  paperType: string;
-}
 
 function parseSettings(formData: FormData): PrintSettings {
   return {

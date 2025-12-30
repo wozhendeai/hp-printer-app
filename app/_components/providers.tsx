@@ -5,7 +5,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { type ReactNode, useMemo } from "react";
-import { getQueryClient } from "../_lib/get-query-client";
+import { getQueryClient } from "@/lib/get-query-client";
 
 interface ProvidersProps {
   children: ReactNode;

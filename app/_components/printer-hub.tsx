@@ -8,15 +8,18 @@ import {
   ScanLine,
   Copy,
   ChevronRight,
-  AlertCircle,
   AlignJustify,
   Droplets,
   ClipboardList,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { StatusPills } from "./status-widgets";
-import type { PrinterData } from "@/app/_lib/printer-api";
+import { AlertBanner } from "./alert-banner";
+import { QuickAction } from "./quick-action";
+import { ToolButton } from "./tool-button";
+import { DashboardSkeleton } from "./dashboard-skeleton";
+import type { PrinterData } from "@/lib/types";
 
 type PrinterStatus = "ready" | "printing" | "error" | "offline";
 
@@ -27,7 +30,11 @@ interface PrinterHubProps {
 }
 
 const statusConfig = {
-  ready: { label: "Ready", color: "text-status-ready", dot: "bg-status-ready" },
+  ready: {
+    label: "Ready",
+    color: "text-status-ready",
+    dot: "bg-status-ready",
+  },
   printing: {
     label: "Printing",
     color: "text-status-busy",
@@ -41,106 +48,6 @@ const statusConfig = {
   },
 };
 
-// Alert banner for important warnings
-function AlertBanner({
-  message,
-  action,
-  href,
-  onDismiss,
-}: {
-  message: string;
-  action: string;
-  href?: string;
-  onDismiss?: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-status-busy/10 border border-status-busy/20">
-      <AlertCircle className="size-5 text-status-busy shrink-0" />
-      <span className="text-sm font-medium flex-1">{message}</span>
-      {href ? (
-        <Link
-          href={href}
-          className="text-sm font-semibold text-status-busy hover:underline shrink-0"
-        >
-          {action}
-        </Link>
-      ) : (
-        <span className="text-sm font-semibold text-status-busy shrink-0">
-          {action}
-        </span>
-      )}
-      {onDismiss && (
-        <button
-          onClick={onDismiss}
-          className="size-6 rounded-md hover:bg-status-busy/15 flex items-center justify-center transition-colors shrink-0"
-        >
-          <X className="size-4 text-status-busy" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Quick action card
-function QuickAction({
-  icon: Icon,
-  title,
-  description,
-  href,
-  variant = "default",
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  description: string;
-  href: string;
-  variant?: "default" | "primary";
-}) {
-  const isPrimary = variant === "primary";
-
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex flex-col p-5 rounded-2xl transition-all duration-200",
-        isPrimary
-          ? "bg-foreground text-background hover:bg-foreground/90"
-          : "bg-card border border-border hover:border-border/80 hover:shadow-sm",
-      )}
-    >
-      <div
-        className={cn(
-          "size-12 rounded-xl flex items-center justify-center mb-4",
-          isPrimary ? "bg-background/15" : "bg-muted",
-        )}
-      >
-        <Icon
-          className={cn(
-            "size-6",
-            isPrimary ? "text-background" : "text-foreground",
-          )}
-        />
-      </div>
-      <span
-        className={cn(
-          "font-semibold",
-          isPrimary ? "text-background" : "text-foreground",
-        )}
-      >
-        {title}
-      </span>
-      <span
-        className={cn(
-          "text-sm mt-0.5",
-          isPrimary ? "text-background/70" : "text-muted-foreground",
-        )}
-      >
-        {description}
-      </span>
-    </Link>
-  );
-}
-
-// Print action row (full width)
 function PrintActionRow() {
   return (
     <Link
@@ -161,7 +68,6 @@ function PrintActionRow() {
   );
 }
 
-// Recent job item
 function JobItem({
   icon: Icon,
   name,
@@ -206,46 +112,6 @@ function JobItem({
   );
 }
 
-// Tool button
-function ToolButton({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <button className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors">
-      <Icon className="size-6 text-muted-foreground" />
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-    </button>
-  );
-}
-
-// Loading skeleton
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-4 animate-pulse">
-      <div className="flex items-center gap-3">
-        <div className="size-12 rounded-xl bg-muted" />
-        <div className="space-y-2">
-          <div className="h-5 w-40 bg-muted rounded" />
-          <div className="h-3 w-32 bg-muted rounded" />
-        </div>
-      </div>
-      <div className="grid grid-cols-5 gap-3">
-        <div className="col-span-3 h-36 bg-muted rounded-2xl" />
-        <div className="col-span-2 h-36 bg-muted rounded-2xl" />
-      </div>
-      <div className="h-20 bg-muted rounded-2xl" />
-      <div className="grid grid-cols-2 gap-3">
-        <div className="h-12 bg-muted rounded-full" />
-        <div className="h-12 bg-muted rounded-full" />
-      </div>
-    </div>
-  );
-}
-
 export function PrinterHub({
   status = "ready",
   printerData,
@@ -262,14 +128,12 @@ export function PrinterHub({
     : status;
 
   const activeConfig = statusConfig[derivedStatus];
-  const ipAddress = "192.168.1.62"; // From CLAUDE.md
+  const ipAddress = "192.168.1.62";
 
-  // Dismissed alerts state
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(
     new Set(),
   );
 
-  // Check for alerts
   const isPaperEmpty = printerData?.paper.state === "missing";
   const hasLowInk = printerData?.ink.some((i) => i.percentRemaining < 20);
 
@@ -277,7 +141,6 @@ export function PrinterHub({
   const showInkAlert =
     !isPaperEmpty && hasLowInk && !dismissedAlerts.has("ink");
 
-  // Mock recent jobs (would come from API in real implementation)
   const recentJobs = [
     {
       icon: Printer,
@@ -336,9 +199,9 @@ export function PrinterHub({
             </div>
           </div>
         </div>
-        <button className="size-10 rounded-lg hover:bg-muted flex items-center justify-center transition-colors">
+        <Button variant="ghost" size="icon" className="rounded-lg">
           <Settings className="size-5 text-muted-foreground" />
-        </button>
+        </Button>
       </div>
 
       {/* Alert Banner */}

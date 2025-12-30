@@ -3,7 +3,7 @@
 import { Copy, CheckCircle, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { RecentCopy } from "../_lib/copy-types";
+import type { RecentCopy } from "../_lib/types";
 
 interface RecentCopiesProps {
   copies: RecentCopy[];

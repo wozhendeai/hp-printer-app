@@ -9,15 +9,17 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { usePrinterQueries } from "@/app/_lib/queries/printer-queries";
-import { useCurrentJob, useCancelJob } from "@/app/_lib/queries/job-queries";
+import { usePrinterStatus } from "@/lib/queries/printer";
+import { POLL_FAST, POLL_SLOW } from "@/lib/queries/polling";
+import { useCurrentJob, useCancelEwsJob } from "@/lib/queries/jobs";
+import { getAlertDisplay, type DisplayAlert } from "@/lib/utils/alerts";
 import type {
   PrinterStatus as PrinterStatusAPI,
   InkLevel,
   PaperTray,
   ScannerStatus,
-} from "@/app/_lib/printer-api";
-import type { PrinterJob } from "@/app/_lib/job-api";
+  Job,
+} from "@/lib/types";
 
 // Derived status type for UI display
 export type PrinterDisplayStatus =
@@ -29,14 +31,8 @@ export type PrinterDisplayStatus =
   | "error"
   | "offline";
 
-// Alert with derived title and description for display
-export interface DisplayAlert {
-  id: string;
-  severity: "Info" | "Warning" | "Error";
-  title: string;
-  description: string;
-  color?: string;
-}
+// Re-export for consumers that need the type
+export type { DisplayAlert };
 
 // Current job with progress info
 export interface CurrentJob {
@@ -74,75 +70,20 @@ const PrinterStatusContext = createContext<PrinterStatusContextValue | null>(
   null,
 );
 
-// Map alert IDs to user-friendly messages
-function getAlertDisplay(alert: PrinterStatusAPI["alerts"][0]): DisplayAlert {
-  const alertMessages: Record<string, { title: string; description: string }> =
-    {
-      cartridgeLow: {
-        title: `${alert.color || "Ink"} low`,
-        description: "Order replacement cartridge",
-      },
-      cartridgeEmpty: {
-        title: `${alert.color || "Ink"} empty`,
-        description: "Replace cartridge to continue",
-      },
-      cartridgeMissing: {
-        title: `${alert.color || "Ink"} cartridge missing`,
-        description: "Install cartridge",
-      },
-      mediaEmpty: {
-        title: "Paper tray empty",
-        description: "Load paper to continue",
-      },
-      mediaJam: {
-        title: "Paper jam",
-        description: "Clear jam and press OK on printer",
-      },
-      doorOpen: {
-        title: "Cover open",
-        description: "Close the cover",
-      },
-      spoolAreaFull: {
-        title: "Print queue full",
-        description: "Wait for jobs to complete or cancel",
-      },
-      scannerError: {
-        title: "Scanner error",
-        description: "Check scanner glass and try again",
-      },
-      inkSystemFailure: {
-        title: "Ink system problem",
-        description: "Restart printer or contact support",
-      },
-      servicePending: {
-        title: "Service required",
-        description: "Contact HP support",
-      },
-    };
-
-  const message = alertMessages[alert.id] || {
-    title: alert.id,
-    description: "Check printer for details",
-  };
-
-  return {
-    id: alert.id,
-    severity: alert.severity,
-    title: message.title,
-    description: message.description,
-    color: alert.color,
-  };
+// Capitalize first letter for display
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // Compute display status based on alerts, jobs, and scanner state
 function computeStatus(
   alerts: PrinterStatusAPI["alerts"],
-  currentJob: PrinterJob | null,
+  currentJob: Job | null,
   scannerStatus: ScannerStatus | null,
   isOffline: boolean,
 ): PrinterDisplayStatus {
   // Priority 1: Error alerts
-  if (alerts.some((a) => a.severity === "Error")) {
+  if (alerts.some((a) => a.severity === "error")) {
     return "error";
   }
 
@@ -152,19 +93,19 @@ function computeStatus(
   }
 
   // Priority 3-5: Active jobs by type
-  if (currentJob?.state === "Processing") {
-    if (currentJob.category === "Copy") return "copying";
-    if (currentJob.category === "Scan") return "scanning";
-    if (currentJob.category === "Print") return "printing";
+  if (currentJob?.state === "processing") {
+    if (currentJob.category === "copy") return "copying";
+    if (currentJob.category === "scan") return "scanning";
+    if (currentJob.category === "print") return "printing";
   }
 
   // Also check scanner status for scans that might not have job entries
-  if (scannerStatus?.state === "Processing") {
+  if (scannerStatus?.state === "processing") {
     return "scanning";
   }
 
   // Priority 6: Warning alerts
-  if (alerts.some((a) => a.severity === "Warning")) {
+  if (alerts.some((a) => a.severity === "warning")) {
     return "warning";
   }
 
@@ -188,21 +129,20 @@ export function PrinterStatusProvider({
   // Fetch current job data
   const currentJobQuery = useCurrentJob();
   const currentJobData = currentJobQuery.data ?? null;
-  const hasActiveJob = currentJobData?.state === "Processing";
+  const hasActiveJob = currentJobData?.state === "processing";
 
-  // Fetch all printer data with dynamic polling based on drawer/job state
-  const printerQueries = usePrinterQueries({
-    isExpanded: isDrawerExpanded,
-    hasActiveJob,
+  // Fetch all printer data with dynamic polling based on job state
+  const printerStatus = usePrinterStatus({
+    pollInterval: hasActiveJob ? POLL_FAST : POLL_SLOW,
   });
 
   // Cancel job mutation
-  const cancelJobMutation = useCancelJob();
+  const cancelJobMutation = useCancelEwsJob();
 
   // Memoize alerts to prevent useEffect dependency instability
   const alerts = useMemo(
-    () => printerQueries.printerStatus?.alerts ?? [],
-    [printerQueries.printerStatus?.alerts],
+    () => printerStatus.data?.status.alerts ?? [],
+    [printerStatus.data?.status.alerts],
   );
 
   // Compute derived values
@@ -210,16 +150,21 @@ export function PrinterStatusProvider({
   const status = computeStatus(
     alerts,
     currentJobData,
-    printerQueries.scannerStatus,
-    printerQueries.isOffline,
+    printerStatus.data?.scanner ?? null,
+    printerStatus.isOffline,
   );
 
-  // Convert job to display format
+  // Convert job to display format (capitalize category for display)
   const currentJob: CurrentJob | null = currentJobData
     ? {
-        id: currentJobData.id,
-        name: currentJobData.source || `${currentJobData.category} Job`,
-        type: currentJobData.category,
+        id: String(currentJobData.id),
+        name:
+          currentJobData.source || `${capitalize(currentJobData.category)} Job`,
+        type: capitalize(currentJobData.category) as
+          | "Print"
+          | "Scan"
+          | "Copy"
+          | "Fax",
         progress: 0,
         currentPage: undefined,
         totalPages: undefined,
@@ -229,7 +174,7 @@ export function PrinterStatusProvider({
   // Auto-expand drawer on error transition (when error first appears)
   // The setState is intentional - we want to synchronize UI state with external printer state
   useEffect(() => {
-    const hasError = alerts.some((a) => a.severity === "Error");
+    const hasError = alerts.some((a) => a.severity === "error");
     if (hasError && !prevHasErrorRef.current) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: auto-expand drawer when printer transitions to error state
       setDrawerExpanded(true);
@@ -239,7 +184,7 @@ export function PrinterStatusProvider({
 
   // Full refresh
   const refresh = async () => {
-    await printerQueries.refetch();
+    await printerStatus.refresh();
   };
 
   // Cancel current job
@@ -248,20 +193,15 @@ export function PrinterStatusProvider({
     await cancelJobMutation.mutateAsync(currentJobData.id);
   };
 
-  // Convert timestamp to Date
-  const lastUpdated = printerQueries.dataUpdatedAt
-    ? new Date(printerQueries.dataUpdatedAt)
-    : null;
-
   const value: PrinterStatusContextValue = {
     status,
     currentJob,
     alerts: displayAlerts,
-    inkLevels: printerQueries.inkLevels,
-    paperTray: printerQueries.paperTray,
-    isLoading: printerQueries.isLoading,
-    isOffline: printerQueries.isOffline,
-    lastUpdated,
+    inkLevels: printerStatus.data?.ink ?? [],
+    paperTray: printerStatus.data?.paper ?? null,
+    isLoading: printerStatus.loading,
+    isOffline: printerStatus.isOffline,
+    lastUpdated: printerStatus.lastUpdated,
     isDrawerExpanded,
     setDrawerExpanded,
     refresh,
